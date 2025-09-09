@@ -1,142 +1,230 @@
 // pages/api/analyzeReviews.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { supabasePublic } from '../../lib/supabasePublic';
-import { supabaseAdmin } from '../../lib/supabaseAdmin';
-import OpenAI, { APIError } from 'openai';
-import { PostgrestError } from '@supabase/supabase-js';
+import type { NextApiRequest, NextApiResponse } from 'next'
+import OpenAI from 'openai'
+import { supabasePublic } from '../../lib/supabasePublic'
 
-export const config = { runtime: 'nodejs' };
+type Sentiment = 'positive' | 'neutral' | 'negative'
 
-type DBReview = { text: string; rating: number | null };
-
-type SummaryPayload = {
-  model: string;
-  content: string;
-  stats: { reviews_count: number; generated_at: string };
-};
-
-const MODEL = 'gpt-4o-mini';
-const CACHE_TTL_HOURS = 24;
-
-function buildPromptText(reviews: DBReview[]): string {
-  const lines = reviews.map((r) => `- [${r.rating ?? 'nr'}/5] ${r.text.replace(/\s+/g, ' ').slice(0, 600)}`);
-  const corpus = lines.join('\n');
-  return `Ты — аналитик отзывов. Суммируй по отелю строго по структуре и на русском:
-1) Плюсы — буллеты
-2) Минусы — буллеты
-3) Общая тональность — одно короткое предложение
-4) Частые проблемы — буллеты (если есть)
-5) Кому подойдёт / кому не подойдёт — по 1–2 буллета
-
-Отвечай кратко, без вводных слов, без Markdown-заголовков вроде "Плюсы:". Используй маркеры "• ".
-
-Отзывы:
-${corpus}`;
+type Summary = {
+  pros: string[]
+  cons: string[]
+  sentiment: Sentiment
+  topics: string[]
+  model: string
 }
 
-function isFresh(updatedAtIso: string, ttlHours: number): boolean {
-  const updated = new Date(updatedAtIso).getTime();
-  const now = Date.now();
-  return now - updated < ttlHours * 3600_000;
+type SummaryRow = {
+  hotel_id: string
+  sentiment: Sentiment | null
+  pros: string[] | null
+  cons: string[] | null
+  topics: string[] | null
+  model: string | null
+  updated_at?: string | null
+}
+
+type Review = {
+  id: string
+  text: string
+  rating: number | null
+  lang: string | null
+  created_at: string | null
+}
+
+const MODEL = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
+const OUTPUT_LANG = process.env.OUTPUT_LANG ?? 'ru'
+const TTL_HOURS = Number(process.env.ANALYSIS_TTL_HOURS ?? 24)
+
+const apiKey = process.env.OPENAI_API_KEY
+if (!apiKey) {
+  // Явная ошибка в рантайме, чтобы не было тихих падений
+  // (TS не требует non-null assertion)
+  throw new Error('Missing OPENAI_API_KEY in environment')
+}
+
+const openai = new OpenAI({ apiKey })
+
+function hoursSince(iso: string): number {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return Number.POSITIVE_INFINITY
+  return (Date.now() - t) / (1000 * 60 * 60)
+}
+
+function clampRating(value: number | undefined): number {
+  const v = typeof value === 'number' ? value : 0
+  return Math.max(0, Math.min(5, v))
+}
+
+function toStringArray(u: unknown): string[] | null {
+  if (!Array.isArray(u)) return null
+  // Приводим всё к строкам без any
+  return u.map((v) => (typeof v === 'string' ? v : String(v)))
+}
+
+function isSentiment(u: unknown): u is Sentiment {
+  return u === 'positive' || u === 'neutral' || u === 'negative'
+}
+
+function sanitizeSummaryLike(obj: unknown): Summary | null {
+  if (typeof obj !== 'object' || obj === null) return null
+  const rec = obj as Record<string, unknown>
+
+  const pros = toStringArray(rec.pros) ?? []
+  const cons = toStringArray(rec.cons) ?? []
+  const topics = toStringArray(rec.topics) ?? []
+  const sentiment: Sentiment = isSentiment(rec.sentiment) ? rec.sentiment : 'neutral'
+
+  return { pros, cons, topics, sentiment, model: MODEL }
+}
+
+function extractJson(content: string): unknown {
+  // иногда модель присылает ```json ... ```
+  const m = content.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const raw = m ? m[1] : content
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+async function fetchCached(hotelId: string): Promise<SummaryRow | null> {
+  const { data, error } = await supabasePublic
+    .from('summaries')
+    .select('*')
+    .eq('hotel_id', hotelId)
+    .maybeSingle<SummaryRow>()
+
+  if (error) throw new Error(error.message)
+  return data ?? null
+}
+
+async function fetchReviews(hotelId: string, limit = 200): Promise<Review[]> {
+  const { data, error } = await supabasePublic
+    .from('reviews')
+    .select('id,text,rating,lang,created_at')
+    .eq('hotel_id', hotelId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+    .returns<Review[]>()
+
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+function buildPrompt(reviews: Review[]) {
+  const sample = reviews
+    .map((r) => {
+      const date = r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : ''
+      return `- ${r.text}${date ? ` (${date})` : ''}`
+    })
+    .join('\n')
+
+  const user = [
+    `Ниже отзывы гостей об одном отеле.`,
+    `Сделай короткую выжимку на языке: ${OUTPUT_LANG}.`,
+    `Верни строго валидный JSON (без префиксов/суффиксов/объяснений):`,
+    `{"pros": string[], "cons": string[], "sentiment": "positive|neutral|negative", "topics": string[]}`,
+    ``,
+    `Отзывы:`,
+    sample || '- (нет отзывов)',
+  ].join('\n')
+
+  return [
+    {
+      role: 'system' as const,
+      content:
+        'Ты ассистент, который кратко суммирует отзывы об отеле. Пиши лаконично, без повторов. Верни валидный JSON.',
+    },
+    { role: 'user' as const, content: user },
+  ]
+}
+
+async function analyzeWithOpenAI(reviews: Review[]): Promise<Summary> {
+  const messages = buildPrompt(reviews)
+  const completion = await openai.chat.completions.create({
+    model: MODEL,
+    temperature: 0.2,
+    messages,
+  })
+  const content = completion.choices[0]?.message?.content ?? ''
+  const parsed = sanitizeSummaryLike(extractJson(content))
+  if (parsed) return parsed
+  // fallback — пустая выжимка, если JSON не распарсился (редко)
+  return { pros: [], cons: [], topics: [], sentiment: 'neutral', model: MODEL }
+}
+
+async function upsertSummary(hotelId: string, s: Summary): Promise<void> {
+  const row: SummaryRow = {
+    hotel_id: hotelId,
+    sentiment: s.sentiment,
+    pros: s.pros,
+    cons: s.cons,
+    topics: s.topics,
+    model: s.model,
+  }
+  const { error } = await supabasePublic.from('summaries').upsert(row, { onConflict: 'hotel_id' })
+  if (error) throw new Error(error.message)
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    const hotelIdRaw = (req.query.hotel_id ?? req.body?.hotel_id) as unknown
+    const hotelId = typeof hotelIdRaw === 'string' ? hotelIdRaw.trim() : ''
+    if (!hotelId) return res.status(400).json({ error: 'hotel_id is required' })
 
-    const q = req.query.hotel_id;
-    const hotel_id = typeof q === 'string' ? q.trim() : Array.isArray(q) ? q[0].trim() : '';
-    const force = String(req.query.force ?? '').toLowerCase() === 'true';
-    if (!hotel_id) return res.status(400).json({ error: 'hotel_id required' });
+    const isForce = req.method === 'POST' || String(req.query.force ?? '').toLowerCase() === '1'
 
-    // 1) КЭШ
-    if (!force) {
-      const cached = await supabasePublic
-        .from('summaries')
-        .select('summary, updated_at')
-        .eq('hotel_id', hotel_id)
-        .maybeSingle();
-
-      if (cached.error) return res.status(500).json({ error: cached.error.message });
-
-      if (cached.data?.summary && cached.data?.updated_at && isFresh(cached.data.updated_at, CACHE_TTL_HOURS)) {
-        return res.status(200).json({ cached: true, summary: cached.data.summary as SummaryPayload });
+    // 1) Кеш (если не форс)
+    if (!isForce) {
+      const cached = await fetchCached(hotelId)
+      if (cached?.updated_at && hoursSince(cached.updated_at) < TTL_HOURS) {
+        const data: Summary = {
+          pros: cached.pros ?? [],
+          cons: cached.cons ?? [],
+          topics: cached.topics ?? [],
+          sentiment: cached.sentiment ?? 'neutral',
+          model: cached.model ?? MODEL,
+        }
+        return res.status(200).json({ data, cached: true, updated_at: cached.updated_at })
       }
-      // если кэш есть, но устарел — пересчитаем ниже
     }
 
-    // 2) ОТЗЫВЫ
-    const { data: reviews, error: rErr }: { data: DBReview[] | null; error: PostgrestError | null } =
-      await supabasePublic
-        .from('reviews')
-        .select('text, rating')
-        .eq('hotel_id', hotel_id)
-        .order('created_at', { ascending: false })
-        .limit(250);
+    // 2) Свежие отзывы
+    const reviews = await fetchReviews(hotelId, 200).then((arr) =>
+      arr.map((r) => ({ ...r, rating: clampRating(r.rating ?? undefined) }))
+    )
 
-    if (rErr) return res.status(500).json({ error: rErr.message });
-
-    const safeReviews = (reviews ?? []).filter((r) => r.text && r.text.trim().length > 0);
-    if (safeReviews.length === 0) {
-      const emptySummary: SummaryPayload = {
-        model: MODEL,
-        content: 'Отзывов нет — выжимка недоступна.',
-        stats: { reviews_count: 0, generated_at: new Date().toISOString() },
-      };
-      await supabaseAdmin
-        .from('summaries')
-        .upsert({ hotel_id, summary: emptySummary, updated_at: new Date().toISOString() });
-      return res.status(200).json({ cached: false, summary: emptySummary });
+    if (reviews.length === 0) {
+      const cached = await fetchCached(hotelId)
+      if (cached) {
+        const data: Summary = {
+          pros: cached.pros ?? [],
+          cons: cached.cons ?? [],
+          topics: cached.topics ?? [],
+          sentiment: cached.sentiment ?? 'neutral',
+          model: cached.model ?? MODEL,
+        }
+        return res.status(200).json({ data, cached: true, updated_at: cached.updated_at })
+      }
+      return res.status(404).json({ error: 'No reviews for this hotel_id' })
     }
 
-    // 3) ПРОМПТ
-    const promptText = buildPromptText(safeReviews);
+    // 3) Анализ OpenAI
+    const summary = await analyzeWithOpenAI(reviews)
 
-    // 4) OPENAI
-    const apiKey = (process.env.OPENAI_API_KEY ?? '').trim();
-    if (!apiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is missing in server env' });
+    // 4) Сохранить кеш
+    await upsertSummary(hotelId, summary)
 
-    const client = new OpenAI({ apiKey });
-
-    let aiContent = '';
-    try {
-      const ai = await client.chat.completions.create({
-        model: MODEL,
-        messages: [{ role: 'user', content: promptText }],
-        temperature: 0.2,
-        max_tokens: 600,
-      });
-      aiContent = ai.choices?.[0]?.message?.content?.trim() ?? '';
-    } catch (err) {
-      const msg =
-        err instanceof APIError
-          ? err.error?.message ?? `${err.status} ${err.name}`
-          : err instanceof Error
-          ? err.message
-          : String(err);
-      return res.status(502).json({ error: `OpenAI error: ${msg}` });
-    }
-
-    const finalContent = aiContent || 'Не удалось получить ответ от модели.';
-    const summary: SummaryPayload = {
-      model: MODEL,
-      content: finalContent,
-      stats: { reviews_count: safeReviews.length, generated_at: new Date().toISOString() },
-    };
-
-    // 5) СОХРАНИТЬ КЭШ
-    const up = await supabaseAdmin
-      .from('summaries')
-      .upsert({ hotel_id, summary, updated_at: new Date().toISOString() });
-
-    if (up.error) {
-      console.error('cache upsert error', up.error);
-    }
-
-    return res.status(200).json({ cached: false, summary });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('analyzeReviews error:', msg);
-    return res.status(500).json({ error: msg });
+    return res.status(200).json({ data: summary, cached: false })
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Internal error'
+    return res.status(500).json({ error: message })
   }
 }
+
+// Подсказка по .env.local:
+// OPENAI_API_KEY=sk-...              // обязателен
+// OPENAI_MODEL=gpt-4o-mini           // опционально
+// ANALYSIS_TTL_HOURS=24              // опционально
+// OUTPUT_LANG=ru                     // опционально
