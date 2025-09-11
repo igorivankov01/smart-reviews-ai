@@ -5,8 +5,8 @@ const nextConfig = {
     domains: [
       'images.unsplash.com',
       'lh3.googleusercontent.com',
-      // замени на хост своего проекта Supabase:
-      'YOUR-PROJECT-ID.supabase.co'
+      'maps.googleapis.com',            // ← добавили
+      'hvraekrmhgzchzrgvken.supabase.co'     // замени на свой
     ]
   }
 }

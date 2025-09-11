@@ -2,6 +2,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import OpenAI from 'openai'
 import { supabasePublic } from '../../lib/supabasePublic'
+import { buildActorKey, getClientIp, rateLimit, rateLimitMonthly } from '../../lib/rate-limit'
+import { getUserIdFromRequest } from '../../lib/auth-server'
+import { getUserPlanLimits } from '../../lib/user-plan'
 
 type Sentiment = 'positive' | 'neutral' | 'negative'
 
@@ -12,7 +15,6 @@ type Summary = {
   topics: string[]
   model: string
 }
-
 type SummaryRow = {
   hotel_id: string
   sentiment: Sentiment | null
@@ -22,26 +24,23 @@ type SummaryRow = {
   model: string | null
   updated_at?: string | null
 }
-
-type Review = {
-  id: string
-  text: string
-  rating: number | null
-  lang: string | null
-  created_at: string | null
+type Review = { id: string; text: string; rating: number | null; lang: string | null; created_at: string | null }
+type ApiResponse = {
+  data?: Summary
+  cached?: boolean
+  updated_at?: string
+  error?: string
+  remaining?: number
+  plan?: 'free' | 'pro'
 }
 
 const MODEL = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
 const OUTPUT_LANG = process.env.OUTPUT_LANG ?? 'ru'
 const TTL_HOURS = Number(process.env.ANALYSIS_TTL_HOURS ?? 24)
+const FREE_UNAUTH_ANALYZE_PER_MONTH = Number(process.env.FREE_UNAUTH_ANALYZE_PER_MONTH ?? 2)
 
 const apiKey = process.env.OPENAI_API_KEY
-if (!apiKey) {
-  // Явная ошибка в рантайме, чтобы не было тихих падений
-  // (TS не требует non-null assertion)
-  throw new Error('Missing OPENAI_API_KEY in environment')
-}
-
+if (!apiKey) throw new Error('Missing OPENAI_API_KEY in environment')
 const openai = new OpenAI({ apiKey })
 
 function hoursSince(iso: string): number {
@@ -49,36 +48,23 @@ function hoursSince(iso: string): number {
   if (Number.isNaN(t)) return Number.POSITIVE_INFINITY
   return (Date.now() - t) / (1000 * 60 * 60)
 }
-
-function clampRating(value: number | undefined): number {
-  const v = typeof value === 'number' ? value : 0
-  return Math.max(0, Math.min(5, v))
-}
-
 function toStringArray(u: unknown): string[] | null {
   if (!Array.isArray(u)) return null
-  // Приводим всё к строкам без any
   return u.map((v) => (typeof v === 'string' ? v : String(v)))
 }
-
 function isSentiment(u: unknown): u is Sentiment {
   return u === 'positive' || u === 'neutral' || u === 'negative'
 }
-
 function sanitizeSummaryLike(obj: unknown): Summary | null {
   if (typeof obj !== 'object' || obj === null) return null
   const rec = obj as Record<string, unknown>
-
   const pros = toStringArray(rec.pros) ?? []
   const cons = toStringArray(rec.cons) ?? []
   const topics = toStringArray(rec.topics) ?? []
   const sentiment: Sentiment = isSentiment(rec.sentiment) ? rec.sentiment : 'neutral'
-
   return { pros, cons, topics, sentiment, model: MODEL }
 }
-
 function extractJson(content: string): unknown {
-  // иногда модель присылает ```json ... ```
   const m = content.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const raw = m ? m[1] : content
   try {
@@ -87,18 +73,15 @@ function extractJson(content: string): unknown {
     return null
   }
 }
-
 async function fetchCached(hotelId: string): Promise<SummaryRow | null> {
   const { data, error } = await supabasePublic
     .from('summaries')
     .select('*')
     .eq('hotel_id', hotelId)
     .maybeSingle<SummaryRow>()
-
   if (error) throw new Error(error.message)
   return data ?? null
 }
-
 async function fetchReviews(hotelId: string, limit = 200): Promise<Review[]> {
   const { data, error } = await supabasePublic
     .from('reviews')
@@ -107,12 +90,10 @@ async function fetchReviews(hotelId: string, limit = 200): Promise<Review[]> {
     .order('created_at', { ascending: false })
     .limit(limit)
     .returns<Review[]>()
-
   if (error) throw new Error(error.message)
   return data ?? []
 }
-
-function buildPrompt(reviews: Review[]) {
+function buildMessages(reviews: Review[]) {
   const sample = reviews
     .map((r) => {
       const date = r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : ''
@@ -131,29 +112,21 @@ function buildPrompt(reviews: Review[]) {
   ].join('\n')
 
   return [
-    {
-      role: 'system' as const,
-      content:
-        'Ты ассистент, который кратко суммирует отзывы об отеле. Пиши лаконично, без повторов. Верни валидный JSON.',
-    },
+    { role: 'system' as const, content: 'Ты ассистент, который кратко суммирует отзывы об отеле. Пиши лаконично.' },
     { role: 'user' as const, content: user },
   ]
 }
-
 async function analyzeWithOpenAI(reviews: Review[]): Promise<Summary> {
-  const messages = buildPrompt(reviews)
   const completion = await openai.chat.completions.create({
     model: MODEL,
     temperature: 0.2,
-    messages,
+    messages: buildMessages(reviews),
   })
   const content = completion.choices[0]?.message?.content ?? ''
   const parsed = sanitizeSummaryLike(extractJson(content))
   if (parsed) return parsed
-  // fallback — пустая выжимка, если JSON не распарсился (редко)
   return { pros: [], cons: [], topics: [], sentiment: 'neutral', model: MODEL }
 }
-
 async function upsertSummary(hotelId: string, s: Summary): Promise<void> {
   const row: SummaryRow = {
     hotel_id: hotelId,
@@ -167,18 +140,22 @@ async function upsertSummary(hotelId: string, s: Summary): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse<ApiResponse>) {
   try {
-    const hotelIdRaw = (req.query.hotel_id ?? req.body?.hotel_id) as unknown
+    const hotelIdRaw = (req.query.hotel_id ?? (req.body as { hotel_id?: unknown } | undefined)?.hotel_id) as unknown
     const hotelId = typeof hotelIdRaw === 'string' ? hotelIdRaw.trim() : ''
     if (!hotelId) return res.status(400).json({ error: 'hotel_id is required' })
 
+    const userId = await getUserIdFromRequest(req)
+    const ip = getClientIp(req)
+    const actorKey = buildActorKey(userId ?? null, ip)
     const isForce = req.method === 'POST' || String(req.query.force ?? '').toLowerCase() === '1'
 
-    // 1) Кеш (если не форс)
+    // 1) Сначала пробуем кэш (чтобы не списывать бесплатные попытки)
     if (!isForce) {
       const cached = await fetchCached(hotelId)
       if (cached?.updated_at && hoursSince(cached.updated_at) < TTL_HOURS) {
+        const updatedAt: string | undefined = cached.updated_at ?? undefined
         const data: Summary = {
           pros: cached.pros ?? [],
           cons: cached.cons ?? [],
@@ -186,45 +163,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sentiment: cached.sentiment ?? 'neutral',
           model: cached.model ?? MODEL,
         }
-        return res.status(200).json({ data, cached: true, updated_at: cached.updated_at })
+        // Уточним план, если пользователь авторизован
+        const plan = userId ? (await getUserPlanLimits(userId)).plan : undefined
+        return res.status(200).json({ data, cached: true, updated_at: updatedAt, plan })
       }
     }
 
-    // 2) Свежие отзывы
-    const reviews = await fetchReviews(hotelId, 200).then((arr) =>
-      arr.map((r) => ({ ...r, rating: clampRating(r.rating ?? undefined) }))
-    )
-
-    if (reviews.length === 0) {
-      const cached = await fetchCached(hotelId)
-      if (cached) {
-        const data: Summary = {
-          pros: cached.pros ?? [],
-          cons: cached.cons ?? [],
-          topics: cached.topics ?? [],
-          sentiment: cached.sentiment ?? 'neutral',
-          model: cached.model ?? MODEL,
-        }
-        return res.status(200).json({ data, cached: true, updated_at: cached.updated_at })
+    // 2) Применяем лимиты
+    if (userId) {
+      // Авторизованные — по дневному лимиту их плана
+      const limits = await getUserPlanLimits(userId)
+      const rl = await rateLimit('/api/analyzeReviews', actorKey, limits.analyze)
+      if (!rl.allowed) {
+        return res.status(429).json({ error: 'Rate limit exceeded', remaining: rl.remaining, plan: limits.plan })
       }
-      return res.status(404).json({ error: 'No reviews for this hotel_id' })
+    } else {
+      // Неавторизованные — 2/месяц по IP (по умолчанию)
+      const rl = await rateLimitMonthly('/api/analyzeReviews', actorKey, FREE_UNAUTH_ANALYZE_PER_MONTH)
+      if (!rl.allowed) {
+        return res.status(401).json({ error: 'Free monthly quota exceeded. Please sign in to continue.' })
+      }
     }
 
-    // 3) Анализ OpenAI
+    // 3) Собираем данные и анализируем
+    const reviews = await fetchReviews(hotelId, 200)
+    if (reviews.length === 0) return res.status(404).json({ error: 'No reviews for this hotel_id' })
+
     const summary = await analyzeWithOpenAI(reviews)
-
-    // 4) Сохранить кеш
     await upsertSummary(hotelId, summary)
 
-    return res.status(200).json({ data: summary, cached: false })
+    const plan = userId ? (await getUserPlanLimits(userId)).plan : undefined
+    return res.status(200).json({ data: summary, cached: false, plan })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Internal error'
     return res.status(500).json({ error: message })
   }
 }
 
-// Подсказка по .env.local:
-// OPENAI_API_KEY=sk-...              // обязателен
-// OPENAI_MODEL=gpt-4o-mini           // опционально
-// ANALYSIS_TTL_HOURS=24              // опционально
-// OUTPUT_LANG=ru                     // опционально
+// .env.local (новая переменная)
+// FREE_UNAUTH_ANALYZE_PER_MONTH=2
