@@ -47,21 +47,21 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <section className="container py-12">
-        <p className="text-muted-foreground">Загружаем профиль…</p>
+        <p className="text-muted-foreground">Loading profile...</p>
       </section>
     )
   }
   if (!user) {
     return (
       <section className="container py-12">
-        <p className="text-muted-foreground">Вы не вошли. Перейдите на страницу «Войти».</p>
+        <p className="text-muted-foreground">You are not signed in. Go to the Sign in page.</p>
       </section>
     )
   }
 
   return (
     <section className="container py-12">
-      <h1 className="text-2xl font-semibold tracking-tight">Профиль</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="card p-5">
@@ -73,35 +73,35 @@ export default function ProfilePage() {
           <div className="mt-1 font-semibold break-all">{user.id}</div>
         </div>
         <div className="card p-5">
-          <div className="text-sm text-muted-foreground">План</div>
+          <div className="text-sm text-muted-foreground">Plan</div>
           <div className="mt-1 font-semibold">{limits?.plan ?? '—'}</div>
         </div>
       </div>
 
-      <h2 className="mt-8 text-lg font-semibold">Лимиты на сегодня</h2>
+      <h2 className="mt-8 text-lg font-semibold">Limits</h2>
       {error && <p className="mt-2 text-danger text-sm">{error}</p>}
 
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         <div className="card p-5">
-          <div className="text-sm text-muted-foreground">AI-анализов</div>
+          <div className="text-sm text-muted-foreground">AI-analyses</div>
           <div className="mt-1 text-2xl font-semibold">
             {limits ? `${limits.today.analyze.remaining}/${limits.today.analyze.limit}` : '—'}
           </div>
-          <div className="text-sm text-muted-foreground">израсходовано: {limits?.today.analyze.used ?? 0}</div>
+          <div className="text-sm text-muted-foreground">used: {limits?.today.analyze.used ?? 0}</div>
         </div>
         <div className="card p-5">
-          <div className="text-sm text-muted-foreground">Просмотров отзывов</div>
+          <div className="text-sm text-muted-foreground">Review fetches</div>
           <div className="mt-1 text-2xl font-semibold">
             {limits ? `${limits.today.reviews.remaining}/${limits.today.reviews.limit}` : '—'}
           </div>
-          <div className="text-sm text-muted-foreground">израсходовано: {limits?.today.reviews.used ?? 0}</div>
+          <div className="text-sm text-muted-foreground">used: {limits?.today.reviews.used ?? 0}</div>
         </div>
         <div className="card p-5">
-          <div className="text-sm text-muted-foreground">Импортов Google Place</div>
+          <div className="text-sm text-muted-foreground">Google Place imports</div>
           <div className="mt-1 text-2xl font-semibold">
             {limits ? `${limits.today.importPlace.remaining}/${limits.today.importPlace.limit}` : '—'}
           </div>
-          <div className="text-sm text-muted-foreground">израсходовано: {limits?.today.importPlace.used ?? 0}</div>
+          <div className="text-sm text-muted-foreground">used: {limits?.today.importPlace.used ?? 0}</div>
         </div>
       </div>
     </section>

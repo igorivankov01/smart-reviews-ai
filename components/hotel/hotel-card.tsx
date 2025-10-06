@@ -74,7 +74,7 @@ export default function HotelCard({
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground">
-              Нет фото
+              No photo
             </div>
           )}
         </div>
@@ -100,7 +100,7 @@ export default function HotelCard({
             <div className="flex flex-wrap items-center gap-2">
               <Stars value={rating} />
               <span className="text-sm text-muted-foreground">
-                {rating ? rating.toFixed(1) : '—'} · {reviewsCount ?? 0} отзывов
+                {rating ? rating.toFixed(1) : '—'} · {reviewsCount ?? 0} reviews
               </span>
             </div>
 
@@ -119,20 +119,20 @@ export default function HotelCard({
               <div className="text-sm text-muted-foreground">
                 {priceFrom ? (
                   <>
-                    от <span className="font-semibold text-foreground">{priceFrom}</span> / ночь
+                    from <span className="font-semibold text-foreground">{priceFrom}</span> / night
                   </>
                 ) : (
-                  <span>Цена по запросу</span>
+                  <span>Ask for price</span>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 {href && (
                   <Link href={href} className="btn h-9">
-                    Подробнее
+                    More
                   </Link>
                 )}
                 <Link href={`/hotel/${id}`} className="btn btn-outline h-9">
-                  AI-резюме
+                  AI-summary
                 </Link>
               </div>
             </div>

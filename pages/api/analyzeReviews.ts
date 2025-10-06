@@ -35,7 +35,7 @@ type ApiResponse = {
 }
 
 const MODEL = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
-const OUTPUT_LANG = process.env.OUTPUT_LANG ?? 'ru'
+const OUTPUT_LANG = process.env.OUTPUT_LANG ?? 'en'
 const TTL_HOURS = Number(process.env.ANALYSIS_TTL_HOURS ?? 24)
 const FREE_UNAUTH_ANALYZE_PER_MONTH = Number(process.env.FREE_UNAUTH_ANALYZE_PER_MONTH ?? 2)
 
@@ -102,17 +102,17 @@ function buildMessages(reviews: Review[]) {
     .join('\n')
 
   const user = [
-    `Ниже отзывы гостей об одном отеле.`,
-    `Сделай короткую выжимку на языке: ${OUTPUT_LANG}.`,
-    `Верни строго валидный JSON (без префиксов/суффиксов/объяснений):`,
+    `Below are reviews from diners about a single restaurant.`,
+    `Return a short summary in language: ${OUTPUT_LANG}.`,
+    `Return strictly valid JSON only (no prose/prefixes/suffixes):`,
     `{"pros": string[], "cons": string[], "sentiment": "positive|neutral|negative", "topics": string[]}`,
     ``,
-    `Отзывы:`,
-    sample || '- (нет отзывов)',
+    `Reviews:`,
+    sample || '- (no reviews)',
   ].join('\n')
 
   return [
-    { role: 'system' as const, content: 'Ты ассистент, который кратко суммирует отзывы об отеле. Пиши лаконично.' },
+    { role: 'system' as const, content: 'You concisely summarize reviews about a restaurant. Keep it brief and useful.' },
     { role: 'user' as const, content: user },
   ]
 }

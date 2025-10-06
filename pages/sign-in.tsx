@@ -26,7 +26,7 @@ export default function SignInPage() {
       if (err) throw err
       setSent(true)
     } catch (ex) {
-      setError(ex instanceof Error ? ex.message : 'Ошибка отправки письма')
+      setError(ex instanceof Error ? ex.message : 'Email delivery error')
     } finally {
       setLoading(false)
     }
@@ -53,7 +53,7 @@ export default function SignInPage() {
       <div className="mx-auto max-w-md">
         <h1 className="text-2xl font-semibold tracking-tight">Вход</h1>
         <p className="mt-2 text-muted-foreground">
-          Используй магическую ссылку или Google.
+          Use a magic link or continue with Google.
         </p>
 
         <div className="mt-6 space-y-3">
@@ -70,7 +70,7 @@ export default function SignInPage() {
             onClick={onEmailSignIn}
             disabled={loading || !email.trim()}
           >
-            {loading ? 'Отправка…' : 'Войти по email'}
+            {loading ? 'Sending...' : 'Sign in via email'}
           </button>
 
           <div className="relative my-4">
@@ -78,24 +78,24 @@ export default function SignInPage() {
               <span className="w-full border-t" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">или</span>
+              <span className="bg-background px-2 text-muted-foreground">or</span>
             </div>
           </div>
 
           <button className="btn btn-outline h-11 w-full" onClick={onGoogle} disabled={loading}>
-            Войти через Google
+            Continue with Google
           </button>
 
           {sent && (
             <p className="text-sm text-muted-foreground">
-              Письмо отправлено. Проверь почту и перейди по ссылке.
+              Email sent. Check your inbox and follow the link.
             </p>
           )}
           {error && <p className="text-sm text-danger">{error}</p>}
 
           <div className="mt-4 text-center text-sm">
             <Link href="/" className="text-foreground underline-offset-4 hover:underline">
-              ← На главную
+              ← Home
             </Link>
           </div>
         </div>

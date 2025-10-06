@@ -99,10 +99,10 @@ export default function Home() {
     <section className="container py-10">
       <div className="mx-auto max-w-3xl text-center">
         <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
-          AI-выжимка отзывов об отелях
+          AI summaries of restaurant reviews
         </h1>
         <p className="mt-3 text-muted-foreground">
-          Введи название отеля — получишь плюсы/минусы, тональность и частые проблемы.
+          Enter a restaurant name to get pros/cons, sentiment, and frequent issues.
         </p>
 
         {/* Поиск по названию */}
@@ -111,26 +111,26 @@ export default function Home() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onSearch()}
-            placeholder="например, The Edge Bali"
+            placeholder="e.g., Nusantara Bistro"
             className="h-12 w-full rounded-2xl border bg-card px-4 outline-none focus:ring-4 focus:ring-primary/20"
-            aria-label="Поиск отеля"
+            aria-label="Search restaurant"
           />
           <button
             className="btn btn-primary h-12 px-6"
             onClick={onSearch}
             disabled={loading || !query.trim()}
           >
-            {loading ? 'Поиск…' : 'Поиск'}
+            {loading ? 'Searching...' : 'Search'}
           </button>
         </div>
         {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
         {/* Импорт по Google Place ID (если используешь) */}
         <div className="mt-6 rounded-2xl border p-4 text-left">
-          <div className="text-sm text-muted-foreground">Импорт из Google</div>
-          <div className="mt-1 font-semibold">Добавить отель по Google Place ID</div>
+          <div className="text-sm text-muted-foreground">Import from Google</div>
+          <div className="mt-1 font-semibold">Add a cafe by Google Place ID</div>
           <p className="mt-2 text-sm text-muted-foreground">
-            Вставь <b>place_id</b> — загрузим карточку и первые отзывы.
+            Вставь <b>place_id</b> — we will fetch the restaurant card and initial diner reviews.
           </p>
           <div className="mt-3 flex items-center gap-2">
             <input
@@ -145,44 +145,44 @@ export default function Home() {
               className="btn h-11 px-5"
               onClick={onImport}
               disabled={importing || !placeId.trim()}
-              title="Импортирует отель и первые отзывы"
+              title="Importing the cafe and first reviews"
             >
-              {importing ? 'Импорт…' : 'Импорт'}
+              {importing ? 'Importing...' : 'Import'}
             </button>
           </div>
           {importError && <p className="mt-2 text-sm text-danger">{importError}</p>}
         </div>
 
-        {/* Подсказки */}
+        {/* Tips */}
         <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           <div className="card card-hover p-5">
-            <div className="text-sm text-muted-foreground">Источник</div>
-            <div className="mt-1 font-semibold">Supabase + кеш</div>
+            <div className="text-sm text-muted-foreground">Source</div>
+            <div className="mt-1 font-semibold">Supabase + cache</div>
             <p className="mt-2 text-sm text-muted-foreground">
-              Сохраняем отзывы и экономим токены на повторных запросах.
+              We store reviews and cache results to save tokens.
             </p>
           </div>
           <div className="card card-hover p-5">
             <div className="text-sm text-muted-foreground">Аналитика</div>
             <div className="mt-1 font-semibold">OpenAI-резюме</div>
             <p className="mt-2 text-sm text-muted-foreground">
-              Плюсы, минусы, тон и часто встречающиеся темы.
+              Pros, cons, sentiment, and recurring topics from diner reviews.
             </p>
           </div>
           <div className="card card-hover p-5">
             <div className="text-sm text-muted-foreground">Скоро</div>
             <div className="mt-1 font-semibold">Google / Booking</div>
             <p className="mt-2 text-sm text-muted-foreground">
-              Подключим источники и автоматическую агрегацию.
+              We will connect sources and automatic aggregation for restaurants.
             </p>
           </div>
         </div>
 
         {/* CTA */}
         <div className="mt-6 flex items-center justify-center gap-3 text-sm text-muted-foreground">
-          <span>Нужна подписка?</span>
+          <span>Need a plan?</span>
           <Link href="/pricing" className="text-foreground underline-offset-4 hover:underline">
-            Посмотреть тарифы
+            View pricing
           </Link>
         </div>
       </div>
@@ -203,7 +203,7 @@ export default function Home() {
             ))}
 
         {!loading && hotels.length === 0 && query.trim() && !error && (
-          <p className="text-muted-foreground">Ничего не найдено. Попробуй другое название.</p>
+          <p className="text-muted-foreground">No results. Try another name.</p>
         )}
       </div>
     </section>

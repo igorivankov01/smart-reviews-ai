@@ -8,15 +8,15 @@ return (
 <>
 <Head>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AI‑Отзывы об отелях</title>
+<title>AI‑Reviews cafes and restaurants</title>
 </Head>
 
 
 <header className="sticky top-0 z-30 border-b bg-background/75 backdrop-blur">
 <div className="container flex h-14 items-center justify-between">
-<Link href="/" className="font-semibold tracking-tight">Hotel‑AI</Link>
+<Link href="/" className="font-semibold tracking-tight">Cafe‑AI</Link>
 <nav className="flex items-center gap-2">
-<Link href="/" className="btn btn-outline h-9">Главная</Link>
+<Link href="/" className="btn btn-outline h-9">Home</Link>
 <a href="https://vercel.com" target="_blank" className="btn btn-secondary h-9">Deploy</a>
 </nav>
 </div>
@@ -30,7 +30,7 @@ return (
 
 <footer className="border-t">
 <div className="container py-6 text-sm text-muted-foreground flex items-center justify-between">
-<span>© {new Date().getFullYear()} Hotel‑AI</span>
+<span>© {new Date().getFullYear()} Cafe‑AI</span>
 <span>Built with Next.js · Tailwind · Supabase · OpenAI</span>
 </div>
 </footer>

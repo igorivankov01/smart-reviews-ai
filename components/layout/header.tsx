@@ -40,21 +40,21 @@ export default function Header() {
 
         <nav className="flex items-center gap-3">
           <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground">
-            Тарифы
+            Pricing
           </Link>
 
           {loading ? null : user ? (
             <>
-              <Link href="/profile" className="btn h-9 px-4" aria-label="Открыть профиль">
-                Профиль
+              <Link href="/profile" className="btn h-9 px-4" aria-label="Open profile">
+                Profile
               </Link>
-              <button onClick={onSignOut} className="btn btn-outline h-9 px-4" aria-label="Выйти из аккаунта">
-                Выйти
+              <button onClick={onSignOut} className="btn btn-outline h-9 px-4" aria-label="Sign out of account">
+                Sign out
               </button>
             </>
           ) : (
-            <Link href="/sign-in" className="btn h-9 px-4" aria-label="Войти">
-              Войти
+            <Link href="/sign-in" className="btn h-9 px-4" aria-label="ВSign in">
+              Sign in
             </Link>
           )}
         </nav>

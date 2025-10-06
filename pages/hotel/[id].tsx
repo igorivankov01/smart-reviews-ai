@@ -178,13 +178,13 @@ export default function HotelPage({ hotelId, initialSummary, initialUpdatedAt }:
       {/* Баннер: бесплатные попытки закончились */}
       {authRequired && (
         <div className="mb-4 rounded-2xl border bg-card p-4">
-          <div className="font-semibold">Бесплатный лимит исчерпан</div>
+          <div className="font-semibold">Free limit reached.</div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Войдите, чтобы продолжить анализ и открыть больше возможностей.
+            Sign in to continue analyzing restaurant reviews and unlock more features.
           </p>
           <div className="mt-3 flex gap-2">
-            <Link href="/sign-in" className="btn h-10 px-4">Войти</Link>
-            <Link href="/pricing" className="btn btn-outline h-10 px-4">Тарифы</Link>
+            <Link href="/sign-in" className="btn h-10 px-4">Sign in</Link>
+            <Link href="/pricing" className="btn btn-outline h-10 px-4">Pricing</Link>
           </div>
         </div>
       )}
@@ -192,22 +192,22 @@ export default function HotelPage({ hotelId, initialSummary, initialUpdatedAt }:
       {/* Заголовок */}
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Отель #{hotelId}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Restaurant #{hotelId}</h1>
           <p className="text-muted-foreground">
-            AI-резюме по отзывам гостей {updatedAt ? <span>· обновлено {new Date(updatedAt).toLocaleString()}</span> : null}
+            AI summary from diner reviews {updatedAt ? <span>· updated {new Date(updatedAt).toLocaleString()}</span> : null}
           </p>
         </div>
         <div className="flex gap-2">
           <button className="btn h-10 px-4" onClick={onReanalyze} disabled={analyzing}>
-            {analyzing ? 'Анализ…' : 'Пересчитать'}
+            {analyzing ? 'Analyzing...' : 'Re-run analysis'}
           </button>
           <button className="btn btn-outline h-10 px-4" onClick={() => navigator.share?.({ url: location.href })}>
-            Поделиться
+            Share
           </button>
         </div>
       </div>
 
-      {/* Сводка */}
+      {/* Summary */}
       <div className="mt-6 grid gap-5 md:grid-cols-3">
         {loadingSummary ? (
           <>
@@ -218,7 +218,7 @@ export default function HotelPage({ hotelId, initialSummary, initialUpdatedAt }:
         ) : (
           <>
             <Card>
-              <CardHeader title="Плюсы" />
+              <CardHeader title="Pros" />
               <CardContent>
                 <ul className="list-disc pl-5 space-y-1">
                   {summary?.pros?.length ? summary.pros.map((p, i) => <li key={i}>{p}</li>) : (
@@ -229,21 +229,21 @@ export default function HotelPage({ hotelId, initialSummary, initialUpdatedAt }:
             </Card>
 
             <Card>
-              <CardHeader title="Минусы" />
+              <CardHeader title="Cons" />
               <CardContent>
                 <ul className="list-disc pl-5 space-y-1">
                   {summary?.cons?.length ? summary.cons.map((c, i) => <li key={i}>{c}</li>) : (
-                    <li className="text-muted-foreground">Нет данных</li>
+                    <li className="text-muted-foreground">No data</li>
                   )}
                 </ul>
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader title="Тональность" />
+              <CardHeader title="Sentiment" />
               <CardContent>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Общая оценка</span>
+                  <span className="text-sm text-muted-foreground">Overall</span>
                   <span className="font-semibold capitalize">{summary?.sentiment ?? '—'}</span>
                 </div>
                 <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-muted">
@@ -260,7 +260,7 @@ export default function HotelPage({ hotelId, initialSummary, initialUpdatedAt }:
 
       {/* Панель фильтра языка */}
       <div className="mt-8 flex items-center gap-3">
-        <label className="text-sm text-muted-foreground" htmlFor="lang-select">Язык отзывов</label>
+        <label className="text-sm text-muted-foreground" htmlFor="lang-select">Review language</label>
         <select
           id="lang-select"
           value={lang ?? ''}
@@ -271,15 +271,15 @@ export default function HotelPage({ hotelId, initialSummary, initialUpdatedAt }:
           }}
           className="h-10 rounded-2xl border bg-card px-3 outline-none focus:ring-4 focus:ring-primary/20"
         >
-          <option value="">Все</option>
+          <option value="">All</option>
           {languages.map((l) => (
             <option key={l} value={l}>{l.toUpperCase()}</option>
           ))}
         </select>
-        <span className="text-sm text-muted-foreground">· всего {total}</span>
+        <span className="text-sm text-muted-foreground">· total {total}</span>
       </div>
 
-      {/* Отзывы */}
+      {/* Rebiews */}
       <div className="mt-4">
         <div className="grid gap-4">
           {loadingReviews ? (
@@ -297,7 +297,7 @@ export default function HotelPage({ hotelId, initialSummary, initialUpdatedAt }:
               </Card>
             ))
           ) : (
-            <p className="text-muted-foreground">Пока нет отзывов</p>
+            <p className="text-muted-foreground">No reviews yet</p>
           )}
         </div>
 
@@ -306,7 +306,7 @@ export default function HotelPage({ hotelId, initialSummary, initialUpdatedAt }:
           <div className="mt-6">
             <Pagination page={page} pageCount={pageCount} onChange={setPage} />
             <p className="mt-2 text-center text-sm text-muted-foreground">
-              Страница {page} из {pageCount} · всего {total}
+              Page {page} Of {pageCount} · total {total}
             </p>
           </div>
         )}
